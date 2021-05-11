@@ -1,0 +1,5 @@
+.vs/
+build/
+JAProxy/*.vcxproj.user
+third-party/npcap/Include/
+third-party/npcap/Lib/

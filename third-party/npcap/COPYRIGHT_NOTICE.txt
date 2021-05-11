@@ -1,0 +1,13 @@
+Due to npcap license, the npcap SDK cannot be included here. To build JAProxy on Windows, you must manually download it from https://nmap.org/npcap/#Download, unpack the Include and Lib folders and place it here. The resulting dir structure must be as follows:
+JAProxy
+  - third-party
+    - npcap
+      - Include
+        - pcap.h and others
+      - Lib
+        - x64
+          - Packet.lib
+          - wpcap.lib
+        - Packet.lib
+        - wpcap.lib
+      - COPYRIGHT_NOTICE.txt
