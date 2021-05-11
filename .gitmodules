@@ -1,0 +1,6 @@
+[submodule "third-party/JKAProto"]
+	path = third-party/JKAProto
+	url = https://github.com/ForcePush/JKAProto
+[submodule "third-party/cppbus"]
+	path = third-party/cppbus
+	url = https://github.com/ForcePush/cppbus
