@@ -5,6 +5,8 @@ VisualStudioVersion = 16.0.31112.23
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JAProxy", "JAProxy\JAProxy.vcxproj", "{BCCAECF9-A7F2-4FC3-B062-5722938225D6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JKAProto", "third-party\JKAProto\JKAProto.vcxproj", "{93803DA9-13F7-4FBC-8883-5EEB021F629B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -27,6 +29,18 @@ Global
 		{BCCAECF9-A7F2-4FC3-B062-5722938225D6}.Release|x64.Build.0 = Release|x64
 		{BCCAECF9-A7F2-4FC3-B062-5722938225D6}.Release|x86.ActiveCfg = Release|Win32
 		{BCCAECF9-A7F2-4FC3-B062-5722938225D6}.Release|x86.Build.0 = Release|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Debug|x64.ActiveCfg = Debug|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Debug|x64.Build.0 = Debug|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Debug|x86.ActiveCfg = Debug|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Debug|x86.Build.0 = Debug|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.DebugAddressSanitizer|x64.ActiveCfg = Debug|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.DebugAddressSanitizer|x64.Build.0 = Debug|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.DebugAddressSanitizer|x86.ActiveCfg = Debug|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.DebugAddressSanitizer|x86.Build.0 = Debug|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Release|x64.ActiveCfg = Release|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Release|x64.Build.0 = Release|x64
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Release|x86.ActiveCfg = Release|Win32
+		{93803DA9-13F7-4FBC-8883-5EEB021F629B}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

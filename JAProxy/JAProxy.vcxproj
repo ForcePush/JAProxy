@@ -260,6 +260,11 @@
     <ClInclude Include="Pcap.h" />
     <ClInclude Include="Result.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\third-party\JKAProto\JKAProto.vcxproj">
+      <Project>{93803da9-13f7-4fbc-8883-5eeb021f629b}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
