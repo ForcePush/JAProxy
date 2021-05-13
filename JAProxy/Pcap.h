@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -61,13 +62,17 @@ public:
     {
         using std::swap;
         swap(a.activated, b.activated);
-        swap(a.pcapHandleVoid, b.pcapHandleVoid);
+        swap(a.pcapHandle, b.pcapHandle);
     }
 
     static Result<Pcap> create(const PcapInterface & iface);
     static Result<Pcap> create(const char *ifaceName);
 
     ~Pcap();
+
+    int getDatalink() noexcept;
+    Result<std::set<int>> getSupportedDatalinks();
+    PcapResult setDatalink(int newDatalink);
 
     template<typename Rep, typename Period>
     Result<int> setTimeout(const std::chrono::duration<Rep, Period> & timeout)
@@ -76,7 +81,7 @@ public:
         if (timeout_ms > static_cast<decltype(timeout_ms)>(std::numeric_limits<int>::max())) {
             return Result<int>::fail("Too big timeout");
         }
-        return setTimeoutMs(timeout_ms.count());
+        return setTimeoutMs(static_cast<int>(timeout_ms.count()));
     }
     PcapResult setImmediateMode(bool enabled);
     PcapResult setSnaplen(int snaplen);
@@ -89,12 +94,14 @@ public:
     PcapResult setFilter(const char *filterStr, uint32_t netmask, bool optimize);
 
     std::future<bool> startLoop(PcapCallback callback, int count = -1);
+    std::future<PcapResult> startLoopIP(PcapCallback callback, int count = -1);
+
     void breakLoop();
 
 private:
     static inline bool initialized = false;
 
-    void *pcapHandleVoid = nullptr;
+    void *pcapHandle = nullptr;
     bool activated = false;
 
     Pcap(void *pcapHandle_);

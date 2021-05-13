@@ -1,6 +1,37 @@
 #include "Pcap.h"
 #include <memory>
+
 #include <pcap/pcap.h>
+
+// Source: https://github.com/p0f/p0f/blob/master/process.c
+constexpr int UNKNOWN_DATALINK = std::numeric_limits<int>::min();
+constexpr int getIPOffset(int datalink) noexcept
+{
+    switch (datalink) {
+    case DLT_RAW: return 0;
+
+    case DLT_NULL:
+    case DLT_PPP: return 4;
+
+    case DLT_LOOP:
+
+#ifdef DLT_PPP_SERIAL
+    case DLT_PPP_SERIAL:
+#endif // DLT_PPP_SERIAL
+
+    case DLT_PPP_ETHER:  return 8;
+
+    case DLT_EN10MB: return 14;
+
+#ifdef DLT_LINUX_SLL
+    case DLT_LINUX_SLL: return 16;
+#endif  // DLT_LINUX_SLL
+    case DLT_PFLOG: return 28;
+    case DLT_IEEE802_11: return 32;
+    }
+
+    return UNKNOWN_DATALINK;
+}
 
 std::optional<boost::asio::ip::address> fromSockaddr(const sockaddr *addr)
 {
@@ -23,7 +54,11 @@ std::optional<boost::asio::ip::address> fromSockaddr(const sockaddr *addr)
 
 PcapResult Pcap::initialize()
 {
+#ifdef PCAP_AVAILABLE_1_10
     return Pcap::initialize(PCAP_CHAR_ENC_LOCAL);
+#else
+    return Pcap::initialize(0);
+#endif
 }
 
 PcapResult Pcap::initialize(unsigned int pcap_char_enc)
@@ -31,11 +66,21 @@ PcapResult Pcap::initialize(unsigned int pcap_char_enc)
     if (initialized) {
         return PcapResult::success(0);
     }
-
+#ifdef PCAP_AVAILABLE_1_10
     char errbuf[PCAP_ERRBUF_SIZE]{};
     int res = pcap_init(pcap_char_enc, errbuf);
     initialized = (res == 0);
     return PcapResult::successOnZero(res, errbuf);
+#else  // PCAP_AVAILABLE_1_10
+    static_cast<void>(pcap_char_enc);
+#ifdef _MSC_VER
+    int res = pcap_wsockinit();
+    initialized = (res == 0);
+    return PcapResult::successOnZero(res, "Failed to initialize winsock");
+#else  // _MSC_VER
+    return PcapResult::success(0);
+#endif  // _MSC_VER
+#endif  // PCAP_AVAILABLE_1_10
 }
 
 struct AllDevsDeleter {
@@ -132,23 +177,23 @@ static pcap_t *castPcap(void *pcapHandleVoid)
 }
 
 Pcap::Pcap(void *pcapHandle_) : 
-    pcapHandleVoid(pcapHandle_)
+    pcapHandle(pcapHandle_)
 {
 }
 
 PcapResult Pcap::successOnZeroGeterror(int result)
 {
-    return PcapResult::successOnZeroLazy(result, [this](int) { return pcap_geterr(castPcap(pcapHandleVoid)); });
+    return PcapResult::successOnZeroLazy(result, [this](int) { return pcap_geterr(castPcap(pcapHandle)); });
 }
 
 char *Pcap::pcap_geterr_wrapper() const
 {
-    return pcap_geterr(castPcap(pcapHandleVoid));
+    return pcap_geterr(castPcap(pcapHandle));
 }
 
 Result<int> Pcap::setTimeoutMs(int ms)
 {
-    return Result<int>::successOnZeroLazy(pcap_set_timeout(castPcap(pcapHandleVoid), ms),
+    return Result<int>::successOnZeroLazy(pcap_set_timeout(castPcap(pcapHandle), ms),
                                           [this](int) { return pcap_geterr_wrapper(); });
 }
 
@@ -163,35 +208,118 @@ extern "C" void worker_wrapper(unsigned char *callbackPtr,
     callback(PcapPacket{ header->ts, header->len, { bytes, header->caplen } });
 }
 
+struct WorkerWrapperIPParams {
+    const PcapCallback & callback;
+    int datalinkOffset;
+};
+
+extern "C" void worker_wrapper_ip(unsigned char *paramsPtr,
+                                  const pcap_pkthdr *header,
+                                  const unsigned char *bytes)
+{
+    assert(paramsPtr != nullptr);
+    assert(header != nullptr);
+
+    const auto & params = *reinterpret_cast<const WorkerWrapperIPParams *>(paramsPtr);
+
+    auto offset = static_cast<decltype(header->len)>(params.datalinkOffset);
+
+    if (header->len < offset) {
+        return;  // Invalid packet
+    }
+
+    auto advancedLen = header->len - offset;
+    auto caplenOffset = std::min(header->caplen, offset);
+    auto advancedCaplen = header->caplen - caplenOffset;
+    bytes += caplenOffset;
+
+    params.callback(PcapPacket{ header->ts, advancedLen, { bytes, advancedCaplen } });
+}
+
 std::future<bool> Pcap::startLoop(PcapCallback callback, int count)
 {
     return std::async(std::launch::async, [this, count, cb = std::move(callback)]() mutable {
-        pcap_loop(castPcap(pcapHandleVoid), count, &worker_wrapper,
+        pcap_loop(castPcap(pcapHandle), count, &worker_wrapper,
                   reinterpret_cast<unsigned char *>(std::addressof(cb)));
         return true;
     });
 }
 
+std::future<PcapResult> Pcap::startLoopIP(PcapCallback callback, int count)
+{
+    return std::async(std::launch::async, [this, count, cb = std::move(callback)]() mutable {
+        int link = getDatalink();
+        auto IPOffset = getIPOffset(link);
+        if (IPOffset == UNKNOWN_DATALINK) {
+            return PcapResult::fail("Unknown datalink");
+        }
+
+        auto params = WorkerWrapperIPParams{ cb, IPOffset };
+
+        pcap_loop(castPcap(pcapHandle), count, &worker_wrapper_ip,
+                  reinterpret_cast<unsigned char *>(std::addressof(params)));
+
+        return PcapResult::success(0);
+    });
+}
+
 void Pcap::breakLoop()
 {
-    pcap_breakloop(castPcap(pcapHandleVoid));
+    pcap_breakloop(castPcap(pcapHandle));
 }
 
 Pcap::~Pcap()
 {
-    if (pcapHandleVoid) {
-        pcap_close(castPcap(pcapHandleVoid));
+    if (pcapHandle) {
+        pcap_close(castPcap(pcapHandle));
     }
+}
+
+int Pcap::getDatalink() noexcept
+{
+    return pcap_datalink(castPcap(pcapHandle));
+}
+
+Result<std::set<int>> Pcap::getSupportedDatalinks()
+{
+    using ResType = Result<std::set<int>>;
+    struct DatalinkListDeleter {
+        void operator()(int *ptr) noexcept
+        {
+            if (ptr) {
+                pcap_free_datalinks(ptr);
+            }
+        }
+    };
+
+    int *links = nullptr;
+    int res = pcap_list_datalinks(castPcap(pcapHandle), &links);
+    std::unique_ptr<int, DatalinkListDeleter> guard{ links };
+
+    if (res == PCAP_ERROR_NOT_ACTIVATED) {
+        return ResType::fail("Pcap handle is not activated");
+    } else if (res == PCAP_ERROR) {
+        return ResType::fail(pcap_geterr(castPcap(pcapHandle)));
+    } else if (res <= 0) {
+        return ResType::fail("Pcap returned invalid supported datalinks count");
+    } else {
+        return ResType::success(std::set<int>(links, links + res));
+    }
+}
+
+PcapResult Pcap::setDatalink(int newDatalink)
+{
+    return successOnZeroGeterror(pcap_set_datalink(castPcap(pcapHandle), newDatalink));
 }
 
 PcapResult Pcap::setImmediateMode(bool enabled)
 {
-    return successOnZeroGeterror(pcap_set_immediate_mode(castPcap(pcapHandleVoid), static_cast<int>(enabled)));
+    return successOnZeroGeterror(pcap_set_immediate_mode(castPcap(pcapHandle), static_cast<int>(enabled)));
 }
 
 PcapResult Pcap::setSnaplen(int snaplen)
 {
-    return successOnZeroGeterror(pcap_set_snaplen(castPcap(pcapHandleVoid), snaplen));
+    return successOnZeroGeterror(pcap_set_snaplen(castPcap(pcapHandle), snaplen));
 }
 
 struct BpfProgramDeleter {
@@ -219,16 +347,16 @@ PcapResult Pcap::setFilter(const char *filterStr, bool optimize)
 PcapResult Pcap::setFilter(const char *filterStr, uint32_t netmask, bool optimize)
 {
     bpf_program prog;
-    int compileRes = pcap_compile(castPcap(pcapHandleVoid), &prog, filterStr, static_cast<int>(optimize), netmask);
+    int compileRes = pcap_compile(castPcap(pcapHandle), &prog, filterStr, static_cast<int>(optimize), netmask);
     if (compileRes != 0) {
-        return PcapResult::fail(compileRes, pcap_geterr(castPcap(pcapHandleVoid)));
+        return PcapResult::fail(compileRes, pcap_geterr(castPcap(pcapHandle)));
     }
     std::unique_ptr<bpf_program, BpfProgramDeleter> progGuard{ &prog };
 
-    return successOnZeroGeterror(pcap_setfilter(castPcap(pcapHandleVoid), &prog));
+    return successOnZeroGeterror(pcap_setfilter(castPcap(pcapHandle), &prog));
 }
 
 PcapResult Pcap::activate()
 {
-    return successOnZeroGeterror(pcap_activate(castPcap(pcapHandleVoid)));
+    return successOnZeroGeterror(pcap_activate(castPcap(pcapHandle)));
 }

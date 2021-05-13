@@ -79,4 +79,44 @@ struct Result {
     {
         return isSuccess();
     }
+
+    constexpr bool has_value() const noexcept
+    {
+        return result.has_value();
+    }
+
+    constexpr T & value() & noexcept
+    {
+        return result.value();
+    }
+
+    constexpr const T & value() const & noexcept
+    {
+        return result.value();
+    }
+
+    constexpr T & operator*() & noexcept
+    {
+        return value();
+    }
+
+    constexpr const T & operator*() const & noexcept
+    {
+        return value();
+    }
+
+    constexpr T *operator->() & noexcept
+    {
+        return std::addressof(value());
+    }
+
+    constexpr const T *operator->() const & noexcept
+    {
+        return std::addressof(value());
+    }
+
+    std::string_view errorStr() const & noexcept
+    {
+        return errorMessage.value_or("(no error message)");
+    }
 };

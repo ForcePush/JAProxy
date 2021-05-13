@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="DebugAddressSanitizer|Win32">
@@ -257,6 +257,7 @@
     <ClCompile Include="Pcap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ip_helpers.h" />
     <ClInclude Include="Pcap.h" />
     <ClInclude Include="Result.h" />
   </ItemGroup>
