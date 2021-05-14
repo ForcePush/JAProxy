@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <memory>
 #include <thread>
 
@@ -13,9 +14,12 @@
 #include <JKAProto/protocol/State.h>
 #include <JKAProto/protocol/PacketEncoder.h>
 #include <JKAProto/protocol/Netchan.h>
+#include <JKAProto/packets/AllConnlessPackets.h>
+#include <JKAProto/packets/ConnlessPacketFactory.h>
 
 #include "Pcap.h"
 #include "ip_helpers.h"
+#include "JKAListener.h"
 
 bool tests()
 {
@@ -74,24 +78,36 @@ bool tests()
     return true;
 }
 
+JKA::Huffman globalHuff{};
+
 void packetListener(const PcapPacket & packet)
 {
-    std::cout << "[" << packet.ts.tv_sec
-        << ":" << packet.ts.tv_usec << "]: "
-        << packet.data.size() << " bytes packet arrived: ";
     auto udpOpt = SimpleUdpPacket::fromRawIp(JKA::Utility::Span(packet.data));
-
     if (!udpOpt) {
-        std::cout << "INVALID UDP" << std::endl;
+        std::cout << "INVALID UDP PACKET" << std::endl;
         return;
     }
     auto & udp = udpOpt.value();
 
-    std::cout << udp.hdr.ip.source << ":" << udp.hdr.sourcePort << " -> "
-        << udp.hdr.ip.dest << ":" << udp.hdr.destPort << ", ";
-
     JKA::Protocol::RawPacket jkaPacket{ std::string(udp.data.to_sv()) };
-    std::cout << "seq " << jkaPacket.getSequence() << std::endl;
+    if (jkaPacket.isOOB()) {
+        std::cout << "[" << packet.ts.tv_sec
+            << ":" << packet.ts.tv_usec << "]: "
+            << udp.hdr.ip.source << ":" << udp.hdr.sourcePort << " -> "
+            << udp.hdr.ip.dest << ":" << udp.hdr.destPort << "; ";
+
+        auto connlessPacket = JKA::Packets::ConnlessPacketFactory::parsePacket(jkaPacket.getData());
+        if (!connlessPacket) {
+            std::cout << "INVALID OOB PACKET: " << jkaPacket.getData();
+            return;
+        }
+        std::cout << connlessPacket->getName();
+        if (connlessPacket->getType() == JKA::CLS_CONNECT) {
+            auto & connectPacket = dynamic_cast<JKA::Packets::Connect &>(*connlessPacket);
+            std::cout << ": " << globalHuff.decompress(connectPacket.getData());
+        }
+        std::cout << std::endl;
+    }
 }
 
 int main()
@@ -131,57 +147,18 @@ int main()
     }
     
     const auto & targetIface = ifacesRes.result.value()[3];
-    auto createRes = Pcap::create(targetIface);
-    if (!createRes) {
-        std::cerr << "Cannot create Pcap: " << createRes.errorMessage.value_or("(no error message)") << std::endl;
-        return EXIT_FAILURE;
-    } else {
-        std::cout << "Pcap on " << targetIface.name << " created." << std::endl;
-    }
-
-    auto & pcapObj = createRes.result.value();
-    pcapObj.setTimeout(std::chrono::milliseconds(200));
-    pcapObj.setImmediateMode(true);
-
-    auto activateRes = pcapObj.activate();
-    if (!activateRes) {
-        std::cerr << "Cannot activate Pcap: " << createRes.errorMessage.value_or("(no error message)") << std::endl;
-        return EXIT_FAILURE;
-    } else {
-        std::cout << "Pcap activated." << std::endl;
-    }
-
-    std::cout << "Datalink: " << pcap_datalink_val_to_description(pcapObj.getDatalink()) << std::endl;
-    auto supportedDatalinks = pcapObj.getSupportedDatalinks();
-    if (!supportedDatalinks) {
-        std::cout << "Cannot get supported datalinks: " << supportedDatalinks.errorMessage.value_or("(no error message)") << std::endl;
-    } else {
-        std::cout << "Supported datalinks: [";
-        for (auto it = supportedDatalinks->begin(); it != supportedDatalinks->end(); ++it) {
-            if (it != supportedDatalinks->begin()) {
-                std::cout << ", ";
-            }
-            std::cout << *it;
-        }
-        std::cout << "]" << std::endl;
-    }
-
-    auto filterRes = pcapObj.setFilter("udp and dst port 29070");
-    if (!filterRes) {
-        std::cerr << "Cannot set filter: " << filterRes.errorMessage.value_or("no error message") << std::endl;
-        return EXIT_FAILURE;
-    } else {
-        std::cout << "Filter set." << std::endl;
-    }
-
+    auto listener = JKAListener(boost::asio::ip::make_address_v4("127.0.0.1"),
+                                29072,
+                                std::chrono::milliseconds(200),
+                                true,
+                                targetIface.name);
     std::cout << "Starting the loop..." << std::endl;
-    auto fut = pcapObj.startLoopIP(packetListener);
-
+    auto fut = listener.startLoop();
     // std::this_thread::sleep_for(std::chrono::seconds(10));
     std::cin.get();
 
     std::cout << "Breaking the loop..." << std::endl;
-    pcapObj.breakLoop();
+    listener.breakLoop();
 
     std::cout << "Waiting for the worker thread to exit..." << std::endl;
     bool res = fut.get();

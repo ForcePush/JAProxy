@@ -44,12 +44,12 @@ static_assert(sizeof(udphdr) == 8);
 #include <netinet/udp.h>
 #endif  // _MSC_VER
 
-size_t ihl_to_bytes(size_t ihl)
+constexpr size_t ihl_to_bytes(size_t ihl)
 {
     return ihl * 4;
 }
 
-const iphdr *packetToIpHeader(JKA::Utility::Span<const JKA::ByteType> rawIpData)
+inline const iphdr *packetToIpHeader(JKA::Utility::Span<const JKA::ByteType> rawIpData)
 {
     if (rawIpData.size() < sizeof(iphdr)) {
         return nullptr;
@@ -58,7 +58,7 @@ const iphdr *packetToIpHeader(JKA::Utility::Span<const JKA::ByteType> rawIpData)
     return reinterpret_cast<const iphdr *>(rawIpData.data());
 }
 
-const udphdr *IpPacketToUdpHeader(JKA::Utility::Span<const JKA::ByteType> rawIpData)
+inline const udphdr *IpPacketToUdpHeader(JKA::Utility::Span<const JKA::ByteType> rawIpData)
 {
     const iphdr *ip = packetToIpHeader(rawIpData);
     if (!ip) {

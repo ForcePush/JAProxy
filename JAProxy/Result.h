@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 template<typename T>
 struct Result {
@@ -12,17 +13,19 @@ struct Result {
 
     template<typename TT>
     static inline Result success(TT && result)
+        noexcept(std::is_nothrow_constructible_v<TT, decltype(std::forward<TT>(result))>)
     {
         return Result{ std::forward<TT>(result), true, {} };
     }
 
     template<typename TT>
     static inline Result fail(TT && result, std::string message)
+        noexcept(std::is_nothrow_constructible_v<TT, decltype(std::forward<TT>(result))>)
     {
         return Result{ std::forward<TT>(result), false, std::move(message) };
     }
 
-    static inline Result fail(std::string message)
+    static inline Result fail(std::string message) noexcept
     {
         return Result{ {}, false, std::move(message) };
     }
@@ -68,7 +71,6 @@ struct Result {
             return fail(std::forward<TT>(result), getErrorMessage(result));
         }
     }
-
 
     constexpr bool isSuccess() const noexcept
     {

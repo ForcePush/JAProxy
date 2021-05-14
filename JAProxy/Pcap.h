@@ -43,7 +43,7 @@ public:
     static PcapResult initialize(unsigned int pcap_char_enc);
     static InterfacesResult listInterfaces();
 
-    Pcap() = default;
+    Pcap() noexcept = default;
     Pcap(const Pcap & other) = delete;
     Pcap(Pcap && other) noexcept : Pcap()
     {
@@ -75,11 +75,11 @@ public:
     PcapResult setDatalink(int newDatalink);
 
     template<typename Rep, typename Period>
-    Result<int> setTimeout(const std::chrono::duration<Rep, Period> & timeout)
+    PcapResult setTimeout(const std::chrono::duration<Rep, Period> & timeout)
     {
         auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
         if (timeout_ms > static_cast<decltype(timeout_ms)>(std::numeric_limits<int>::max())) {
-            return Result<int>::fail("Too big timeout");
+            return PcapResult::fail("Too big timeout");
         }
         return setTimeoutMs(static_cast<int>(timeout_ms.count()));
     }
@@ -93,6 +93,10 @@ public:
     PcapResult setFilter(const char *filterStr, bool optimize = true);
     PcapResult setFilter(const char *filterStr, uint32_t netmask, bool optimize);
 
+    bool isDatalinkKnown(int datalink) noexcept;
+
+    bool startLoopBlocking(PcapCallback callback, int count = -1);
+    PcapResult startLoopIPBlocking(PcapCallback callback, int count = -1);
     std::future<bool> startLoop(PcapCallback callback, int count = -1);
     std::future<PcapResult> startLoopIP(PcapCallback callback, int count = -1);
 

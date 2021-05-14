@@ -21,6 +21,9 @@
     <ClCompile Include="Pcap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="JKAListener.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Pcap.h">
@@ -30,6 +33,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ip_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="JKAListener.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

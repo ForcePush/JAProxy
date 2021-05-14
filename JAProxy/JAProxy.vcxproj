@@ -254,10 +254,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="JAProxy.cpp" />
+    <ClCompile Include="JKAListener.cpp" />
     <ClCompile Include="Pcap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ip_helpers.h" />
+    <ClInclude Include="JKAListener.h" />
     <ClInclude Include="Pcap.h" />
     <ClInclude Include="Result.h" />
   </ItemGroup>

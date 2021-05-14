@@ -197,8 +197,14 @@ Result<int> Pcap::setTimeoutMs(int ms)
                                           [this](int) { return pcap_geterr_wrapper(); });
 }
 
+bool Pcap::isDatalinkKnown(int datalink) noexcept
+{
+    return getIPOffset(datalink) != UNKNOWN_DATALINK;
+}
+
+
 extern "C" void worker_wrapper(unsigned char *callbackPtr,
-                               const pcap_pkthdr *header,
+                               const pcap_pkthdr * header,
                                const unsigned char *bytes)
 {
     assert(callbackPtr != nullptr);
@@ -214,7 +220,7 @@ struct WorkerWrapperIPParams {
 };
 
 extern "C" void worker_wrapper_ip(unsigned char *paramsPtr,
-                                  const pcap_pkthdr *header,
+                                  const pcap_pkthdr * header,
                                   const unsigned char *bytes)
 {
     assert(paramsPtr != nullptr);
@@ -236,30 +242,40 @@ extern "C" void worker_wrapper_ip(unsigned char *paramsPtr,
     params.callback(PcapPacket{ header->ts, advancedLen, { bytes, advancedCaplen } });
 }
 
+bool Pcap::startLoopBlocking(PcapCallback callback, int count)
+{
+    pcap_loop(castPcap(pcapHandle), count, &worker_wrapper,
+              reinterpret_cast<unsigned char *>(std::addressof(callback)));
+    return true;
+}
+
+PcapResult Pcap::startLoopIPBlocking(PcapCallback callback, int count)
+{
+    int link = getDatalink();
+    auto IPOffset = getIPOffset(link);
+    if (IPOffset == UNKNOWN_DATALINK) {
+        return PcapResult::fail("Unknown datalink");
+    }
+
+    auto params = WorkerWrapperIPParams{ std::move(callback), IPOffset };
+
+    pcap_loop(castPcap(pcapHandle), count, &worker_wrapper_ip,
+              reinterpret_cast<unsigned char *>(std::addressof(params)));
+
+    return PcapResult::success(0);
+}
+
 std::future<bool> Pcap::startLoop(PcapCallback callback, int count)
 {
     return std::async(std::launch::async, [this, count, cb = std::move(callback)]() mutable {
-        pcap_loop(castPcap(pcapHandle), count, &worker_wrapper,
-                  reinterpret_cast<unsigned char *>(std::addressof(cb)));
-        return true;
+        return startLoopBlocking(std::move(cb), count);
     });
 }
 
 std::future<PcapResult> Pcap::startLoopIP(PcapCallback callback, int count)
 {
     return std::async(std::launch::async, [this, count, cb = std::move(callback)]() mutable {
-        int link = getDatalink();
-        auto IPOffset = getIPOffset(link);
-        if (IPOffset == UNKNOWN_DATALINK) {
-            return PcapResult::fail("Unknown datalink");
-        }
-
-        auto params = WorkerWrapperIPParams{ cb, IPOffset };
-
-        pcap_loop(castPcap(pcapHandle), count, &worker_wrapper_ip,
-                  reinterpret_cast<unsigned char *>(std::addressof(params)));
-
-        return PcapResult::success(0);
+        return startLoopIPBlocking(std::move(cb), count);
     });
 }
 
