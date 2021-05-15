@@ -253,15 +253,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Client.cpp" />
     <ClCompile Include="JAProxy.cpp" />
     <ClCompile Include="JKAListener.cpp" />
     <ClCompile Include="Pcap.cpp" />
+    <ClCompile Include="Server.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Client.h" />
     <ClInclude Include="ip_helpers.h" />
     <ClInclude Include="JKAListener.h" />
     <ClInclude Include="Pcap.h" />
     <ClInclude Include="Result.h" />
+    <ClInclude Include="Server.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\third-party\JKAProto\JKAProto.vcxproj">

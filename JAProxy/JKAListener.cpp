@@ -1,6 +1,7 @@
 #include "JKAListener.h"
-
 #include <iostream>
+
+#include <boost/asio.hpp>
 
 #include <JKAProto/protocol/ClientPacket.h>
 #include <JKAProto/protocol/ServerPacket.h>
@@ -11,17 +12,23 @@
 
 JKA::Huffman JKAListener::globalHuff{};
 
+bool JKAListener::startLoopBlocking(PacketCallback packetFromClient,
+                                    PacketCallback packetFromServer)
+{
+    return pcap.startLoopIPBlocking([this,
+                                    pFromC = std::move(packetFromClient),
+                                    pFromS = std::move(packetFromServer)](const PcapPacket & packet) {
+        packetArrived(packet, pFromC, pFromS);
+    }).isSuccess();
+}
+
 std::future<bool> JKAListener::startLoop(PacketCallback packetFromClient,
                                          PacketCallback packetFromServer)
 {
     return std::async(std::launch::async, [this,
                                            pFromC = std::move(packetFromClient),
-                                           pFromS = std::move(packetFromServer)]() {
-        return pcap.startLoopIPBlocking([this,
-                                        pFromC = std::move(pFromC),
-                                        pFromS = std::move(pFromS)](const PcapPacket & packet) {
-            packetArrived(packet, pFromC, pFromS);
-        }).isSuccess();
+                                           pFromS = std::move(packetFromServer)]() mutable {
+        return startLoopBlocking(std::move(pFromC), std::move(pFromS));
     });
 }
 
@@ -78,15 +85,23 @@ void JKAListener::packetArrived(const PcapPacket & packet,
 
     auto & udp = udpOpt.value();
     PacketDirection packetDir = getPacketDirection(udp);
+
+    auto from = boost::asio::ip::udp::endpoint(udp.hdr.ip.source, udp.hdr.sourcePort);
+    auto to   = boost::asio::ip::udp::endpoint(udp.hdr.ip.dest,   udp.hdr.destPort  );
+
+    auto arriveTimeUnix = std::chrono::seconds(packet.ts.tv_sec) + std::chrono::microseconds(packet.ts.tv_usec);
+    auto arriveTimeUnixCasted = std::chrono::duration_cast<JKA::TimePoint::duration>(arriveTimeUnix);
+    auto arriveTimePoint = JKA::TimePoint(arriveTimeUnixCasted);
+
     switch (packetDir) 	{
     case JKAListener::PacketDirection::FROM_CLIENT:
     {
-        packetFromClient(JKA::Protocol::RawPacket(std::string(udp.data.to_sv())), packet.ts);
+        packetFromClient(from, to, JKA::Protocol::RawPacket(std::string(udp.data.to_sv())), arriveTimePoint);
         break;
     }
     case JKAListener::PacketDirection::FROM_SERVER:
     {
-        packetFromServer(JKA::Protocol::RawPacket(std::string(udp.data.to_sv())), packet.ts);
+        packetFromServer(from, to, JKA::Protocol::RawPacket(std::string(udp.data.to_sv())), arriveTimePoint);
         break;
     }
     case JKAListener::PacketDirection::NOT_RELATED: JKA_UNLIKELY

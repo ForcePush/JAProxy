@@ -25,6 +25,8 @@
 #include "Pcap.h"
 #include "ip_helpers.h"
 #include "JKAListener.h"
+#include "Client.h"
+#include "Server.h"
 
 bool tests()
 {
@@ -110,23 +112,22 @@ int main(int argc, const char *argv[])
         std::cout << "Got " << ifacesRes.result.value().size() << " interfaces:" << std::endl;
     }
 
-    {
-        size_t idx = 0;
-        for (const auto & iface : ifacesRes.result.value()) {
-            std::cout << "[" << idx++ << "]: " << iface.name << ": " << iface.description.value_or("(no description)") << std::endl;
-            for (const auto & addr : iface.addresses) {
-                std::cout << "    " << addr.addr;
-                if (addr.netmask.has_value()) {
-                    std::cout << ", netmask " << addr.netmask.value();
-                }
-                if (addr.broadaddr.has_value()) {
-                    std::cout << ", broadcast " << addr.broadaddr.value();
-                }
-                std::cout << std::endl;
-            }
-        }
-    }
-
+    //{
+    //    size_t idx = 0;
+    //    for (const auto & iface : ifacesRes.result.value()) {
+    //        std::cout << "[" << idx++ << "]: " << iface.name << ": " << iface.description.value_or("(no description)") << std::endl;
+    //        for (const auto & addr : iface.addresses) {
+    //            std::cout << "    " << addr.addr;
+    //            if (addr.netmask.has_value()) {
+    //                std::cout << ", netmask " << addr.netmask.value();
+    //            }
+    //            if (addr.broadaddr.has_value()) {
+    //                std::cout << ", broadcast " << addr.broadaddr.value();
+    //            }
+    //            std::cout << std::endl;
+    //        }
+    //    }
+    //}
 
     if (argc < 4) {
         std::cout << "Usage: JAProxy <interface idx> <server ip> <server port>" << std::endl;
@@ -141,150 +142,21 @@ int main(int argc, const char *argv[])
     std::string_view targetIface = ifacesRes.result.value()[ifaceIdx].name;
 
     auto serverAddr = boost::asio::ip::make_address_v4(argv[2]);
-    uint16_t serverPort = std::stoul(argv[3]);
+    uint16_t serverPort = static_cast<uint16_t>(std::stoul(argv[3]));
 
-    auto listener = JKAListener(serverAddr,
-                                serverPort,
-                                std::chrono::milliseconds(200),
-                                true,
-                                targetIface);
-
-    JKA::Q3Huffman huff{};
-    JKA::ReliableCommandsStore store{};
-    JKA::ClientConnection connection{};
-    std::unique_ptr<JKA::ClientGameState> statePtr = std::make_unique<JKA::ClientGameState>();
-    JKA::ClientGameState & state = *statePtr;
-
-    JKA::Protocol::Netchan<JKA::Protocol::ServerPacketEncoder> netchan_server;
-    JKA::Protocol::Netchan<JKA::Protocol::ClientPacketEncoder> netchan_client;
-
-    constexpr static size_t DELTA_AVERAGE = 100;
-    constexpr static bool SHOW_PACKETS = false;
-
-    struct EvListener : public JKA::ClientEventsListener {
-        EvListener(JKA::ClientGameState & state, JKA::ClientConnection & connection) :
-            state(state),
-            connection(connection)
-        {
-        }
-
-        virtual void onClientInfoChanged(const JKA::JKAInfo &, const JKA::JKAInfo & newInfo) override
-        {
-            std::cout << "New userinfo:";
-            for (const auto & [k, v] : newInfo) {
-                std::cout << std::endl << k << ": " << v;
-            }
-            std::cout << std::endl;
-        }
-
-        virtual void onServerReliableCommand(const JKA::CommandParser::Command & cmd) override
-        {
-            std::cout << "Server command: " << cmd.name << " " << cmd.concat() << std::endl;
-        }
-
-        virtual void onClientReliableCommand(int32_t, const JKA::CommandParser::Command & cmd) override
-        {
-            std::cout << "Client command: " << cmd.name << " " << cmd.concat() << std::endl;
-        }
-
-        virtual void onNewUsercmd(const JKA::usercmd_t & cmd) override
-        {
-            if (lastMessageAcknowledged != connection.messageAcknowledge) {
-                lastMessageAcknowledged = connection.messageAcknowledge;
-                const auto & oldSnap = state.snapshots[connection.messageAcknowledge & JKA::PACKET_MASK];
-                const auto & prevSnap = state.snapshots[(connection.messageAcknowledge - 1) & JKA::PACKET_MASK];
-                int32_t rtt = static_cast<int32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                    cmd.arriveTime - oldSnap.arriveTime).count());
-                int32_t curDiff = (cmd.serverTime - oldSnap.snap.serverTime);
-                int32_t frameTime = static_cast<int32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                    cmd.arriveTime - state.lastUsercmd.arriveTime).count());
-                curDiff -= rtt;
-                curDiff += frameTime;
-                curDiff += (oldSnap.snap.serverTime - prevSnap.snap.serverTime);
-                diff(connection.messageAcknowledge) = curDiff;
-                // std::cout << "Snapshot " << connection.messageAcknowledge << "; rtt " << rtt << "; frameTime " << frameTime << "; diff " << curDiff << std::endl;
-                if (connection.messageAcknowledge % DELTA_AVERAGE == 0) {
-                    int32_t diffsSum = 0;
-                    for (auto & diff : diffs) {
-                        diffsSum += diff;
-                    }
-                    std::cout << "Client serverTime average delta: " << (diffsSum / static_cast<float>(DELTA_AVERAGE)) << std::endl;
-                }
-            }
-        }
-
-        JKA::ClientGameState & state;
-        JKA::ClientConnection & connection;
-
-        int32_t lastMessageAcknowledged = 0;
-        std::array<int32_t, DELTA_AVERAGE> diffs{};
-        int32_t & diff(size_t seq)
-        {
-            return diffs[seq % DELTA_AVERAGE];
-        }
-    };
-
-    EvListener evListener{state, connection};
-
-    JKA::ClientPacketParser clPacketParser(evListener, store, connection, state);
-    JKA::ServerPacketParser svPacketParser(evListener, store, connection, state);
-
-    auto packetFromClient = [&](JKA::Protocol::RawPacket && packet, timeval ts) {
-        if (packet.isConnless()) {
-            auto parsedPacket = JKA::Packets::ConnlessPacketFactory::parsePacket(packet.getData());
-            if (parsedPacket) {
-                svPacketParser.handleOobPacketFromClient(*parsedPacket);
-                clPacketParser.handleOobPacketFromClient(*parsedPacket);
-            }
-        } else {  // Connfull
-            auto decodedPacket = netchan_client.processIncomingPacket(packet, huff, connection, store);
-            if (decodedPacket) {
-                if (SHOW_PACKETS) {
-                    std::cout << "CLIENT -> SERVER (" << decodedPacket->message.to_span().size() << " bytes): seq " << decodedPacket->sequence
-                    << ", qport " << decodedPacket->qport
-                    << ", serverId " << decodedPacket->serverId
-                    << ", mAck " << decodedPacket->messageAcknowledge
-                    << ", relAck " << decodedPacket->reliableAcknowledge
-                    << std::endl;
-                }
-                auto arriveTimeUnix = std::chrono::seconds(ts.tv_sec) + std::chrono::microseconds(ts.tv_usec);
-                auto arriveTimeUnixCasted = std::chrono::duration_cast<JKA::TimePoint::duration>(arriveTimeUnix);
-                auto arriveTimePoint = JKA::TimePoint(arriveTimeUnixCasted);
-                clPacketParser.handleConnfullPacketFromClient(decodedPacket.value(), arriveTimePoint);
-            }
-        }
-    };
-
-    auto packetFromServer = [&](JKA::Protocol::RawPacket && packet, timeval ts) {
-        if (packet.isConnless()) {
-            auto parsedPacket = JKA::Packets::ConnlessPacketFactory::parsePacket(packet.getData());
-            if (parsedPacket) {
-                svPacketParser.handleOobPacketFromServer(*parsedPacket);
-                clPacketParser.handleOobPacketFromServer(*parsedPacket);
-            }
-        } else {  // Connfull
-            auto decodedPacket = netchan_server.processIncomingPacket(packet, huff, connection, store);
-            if (decodedPacket) {
-                if (SHOW_PACKETS) {
-                    std::cout << "SERVER -> CLIENT (" << decodedPacket->message.to_span().size() << " bytes): seq " << decodedPacket->sequence
-                        << ", relAck " << decodedPacket->reliableAcknowledge
-                        << std::endl;
-                }
-                auto arriveTimeUnix = std::chrono::seconds(ts.tv_sec) + std::chrono::microseconds(ts.tv_usec);
-                auto arriveTimeUnixCasted = std::chrono::duration_cast<JKA::TimePoint::duration>(arriveTimeUnix);
-                auto arriveTimePoint = JKA::TimePoint(arriveTimeUnixCasted);
-                svPacketParser.handleConnfullPacketFromServer(decodedPacket.value(), arriveTimePoint);
-            }
-        }
-    };
+    auto server = Server(serverAddr,
+                         serverPort,
+                         std::chrono::milliseconds(200),
+                         true,
+                         targetIface);
 
     std::cout << "Starting the loop..." << std::endl;
-    auto fut = listener.startLoop(std::move(packetFromClient), std::move(packetFromServer));
+    auto fut = server.startLoop();
     // std::this_thread::sleep_for(std::chrono::seconds(10));
     std::cin.get();
 
     std::cout << "Breaking the loop..." << std::endl;
-    listener.breakLoop();
+    server.breakLoop();
 
     std::cout << "Waiting for the worker thread to exit..." << std::endl;
     try {

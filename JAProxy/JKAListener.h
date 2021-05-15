@@ -9,6 +9,7 @@
 #include <boost/asio.hpp>
 #include <JKAProto/Huffman.h>
 #include <JKAProto/protocol/RawPacket.h>
+#include <JKAProto/SharedDefs.h>
 
 #include "Pcap.h"
 #include "ip_helpers.h"
@@ -30,7 +31,10 @@ private:
 
 class JKAListener {
 public:
-    using PacketCallback = std::function<void(JKA::Protocol::RawPacket && packet, timeval ts)>;
+    using PacketCallback = std::function<void(const boost::asio::ip::udp::endpoint & from,
+                                              const boost::asio::ip::udp::endpoint & to,
+                                              JKA::Protocol::RawPacket && packet,
+                                              JKA::TimePoint arriveTime)>;
 
     template<typename Rep, typename Period>
     JKAListener(const boost::asio::ip::address_v4 & serverAddr,
@@ -81,6 +85,9 @@ public:
 
     JKAListener(JKAListener &&) noexcept = default;
     JKAListener & operator=(JKAListener &&) noexcept = default;
+
+    bool startLoopBlocking(PacketCallback packetFromClient,
+                           PacketCallback packetFromServer);
 
     std::future<bool> startLoop(PacketCallback packetFromClient,
                                 PacketCallback packetFromServer);
