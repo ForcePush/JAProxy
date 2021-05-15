@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <future>
+#include <functional>
 #include <string_view>
 #include <sstream>
 #include <exception>
@@ -29,6 +30,8 @@ private:
 
 class JKAListener {
 public:
+    using PacketCallback = std::function<void(JKA::Protocol::RawPacket && packet, timeval ts)>;
+
     template<typename Rep, typename Period>
     JKAListener(const boost::asio::ip::address_v4 & serverAddr,
                 uint16_t serverPort,
@@ -79,7 +82,8 @@ public:
     JKAListener(JKAListener &&) noexcept = default;
     JKAListener & operator=(JKAListener &&) noexcept = default;
 
-    std::future<bool> startLoop();
+    std::future<bool> startLoop(PacketCallback packetFromClient,
+                                PacketCallback packetFromServer);
     void breakLoop();
 
 private:
@@ -93,7 +97,9 @@ private:
     void throwOnResultFail(std::string_view step, const PcapResult & res);
     void trySetKnownDatalink(Pcap & pcapObj);
 
-    void packetArrived(const PcapPacket & packet);
+    void packetArrived(const PcapPacket & packet,
+                       const PacketCallback & packetFromClient,
+                       const PacketCallback & packetFromServer);
     PacketDirection getPacketDirection(const SimpleUdpPacket & packet) const noexcept
     {
         if (packet.hdr.ip.dest == serverAddr && packet.hdr.destPort == serverPort) {
@@ -104,9 +110,6 @@ private:
             return PacketDirection::NOT_RELATED;
         }
     }
-
-    void packetFromClient(JKA::Protocol::RawPacket packet);
-    void packetFromServer(JKA::Protocol::RawPacket packet);
 
     static JKA::Huffman globalHuff;
 
