@@ -88,7 +88,7 @@ bool tests()
 
 JKA::Huffman globalHuff{};
 
-int main()
+int main(int argc, const char *argv[])
 {
     if (!tests()) {
         return EXIT_FAILURE;
@@ -110,27 +110,44 @@ int main()
         std::cout << "Got " << ifacesRes.result.value().size() << " interfaces:" << std::endl;
     }
 
-    for (const auto & iface : ifacesRes.result.value()) {
-        std::cout << iface.name << ": " << iface.description.value_or("(no description)") << std::endl;
-        for (const auto & addr : iface.addresses) {
-            std::cout << "    " << addr.addr;
-            if (addr.netmask.has_value()) {
-                std::cout << ", netmask " << addr.netmask.value();
+    {
+        size_t idx = 0;
+        for (const auto & iface : ifacesRes.result.value()) {
+            std::cout << "[" << idx++ << "]: " << iface.name << ": " << iface.description.value_or("(no description)") << std::endl;
+            for (const auto & addr : iface.addresses) {
+                std::cout << "    " << addr.addr;
+                if (addr.netmask.has_value()) {
+                    std::cout << ", netmask " << addr.netmask.value();
+                }
+                if (addr.broadaddr.has_value()) {
+                    std::cout << ", broadcast " << addr.broadaddr.value();
+                }
+                std::cout << std::endl;
             }
-            if (addr.broadaddr.has_value()) {
-                std::cout << ", broadcast " << addr.broadaddr.value();
-            }
-            std::cout << std::endl;
         }
     }
-    
-    const auto & targetIface = ifacesRes.result.value()[3];
-    auto listener = JKAListener(//boost::asio::ip::make_address_v4("81.169.175.120"),
-                                boost::asio::ip::make_address_v4("127.0.0.1"),
-                                29072,
+
+
+    if (argc < 4) {
+        std::cout << "Usage: JAProxy <interface idx> <server ip> <server port>" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    size_t ifaceIdx = std::stoull(argv[1]);
+    if (ifaceIdx >= ifacesRes.result.value().size()) {
+        std::cout << "ERROR: invalid iface idx" << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::string_view targetIface = ifacesRes.result.value()[ifaceIdx].name;
+
+    auto serverAddr = boost::asio::ip::make_address_v4(argv[2]);
+    uint16_t serverPort = std::stoul(argv[3]);
+
+    auto listener = JKAListener(serverAddr,
+                                serverPort,
                                 std::chrono::milliseconds(200),
                                 true,
-                                targetIface.name);
+                                targetIface);
 
     JKA::Q3Huffman huff{};
     JKA::ReliableCommandsStore store{};

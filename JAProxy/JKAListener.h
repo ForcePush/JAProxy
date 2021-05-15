@@ -23,7 +23,7 @@ private:
     static std::string formatError(std::string_view step, std::string_view message)
     {
         std::ostringstream ss;
-        ss << "JKA Listener exception: step " << step << ", error message " << message;
+        ss << "JKA Listener exception: step: " << step << ", error message: " << message;
         return ss.str();
     }
 };
